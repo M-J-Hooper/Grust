@@ -1,19 +1,16 @@
 use crate::hash;
-use std::collections::{
-    HashMap,
-    HashSet,
-};
+use std::collections::{HashMap, HashSet};
 use std::hash::Hash;
 
 #[derive(Debug)]
 pub struct Graph<T> {
-    nodes: HashMap<u64, Node<T>>,
+    pub(crate) nodes: HashMap<u64, Node<T>>,
 }
 
 impl<T> Default for Graph<T> {
     fn default() -> Self {
         Graph {
-            nodes: HashMap::new()
+            nodes: HashMap::new(),
         }
     }
 }
@@ -25,7 +22,7 @@ impl<T> Graph<T> {
 }
 
 impl<T: Hash + Eq + Default> Graph<T> {
-    pub fn init<I: IntoIterator<Item=T>>(labels: I) -> Self {
+    pub fn init<I: IntoIterator<Item = T>>(labels: I) -> Self {
         let mut graph = Self::new();
         for label in labels {
             graph.add(label);
@@ -35,7 +32,7 @@ impl<T: Hash + Eq + Default> Graph<T> {
 }
 
 impl<T: Hash + Eq> Graph<T> {
-    fn get(&self, label: &T) -> Option<&Node<T>> {
+    pub(crate) fn get(&self, label: &T) -> Option<&Node<T>> {
         let key = hash(label);
         self.nodes.get(&key)
     }
@@ -60,12 +57,14 @@ impl<T: Hash + Eq> Graph<T> {
     }
 
     pub fn connections(&self, label: &T) -> Option<HashSet<&T>> {
-        let res = self.get(label)?
-            .edges.keys()
+        let res = self
+            .get(label)?
+            .edges
+            .keys()
             .map(|k| self.nodes.get(k).unwrap())
             .map(|n| &n.label)
             .collect::<HashSet<_>>();
-        
+
         Some(res)
     }
 
@@ -129,7 +128,7 @@ impl<T: Hash> Node<T> {
         let target = hash(to);
         self.edges.insert(target, 1);
     }
-    
+
     pub fn disconnect_from(&mut self, from: &T) {
         let target = hash(from);
         self.edges.remove(&target);
@@ -143,7 +142,7 @@ mod tests {
     #[test]
     fn basic() {
         let mut g = Graph::init('a'..='c');
-        
+
         // b <-> a <-> c
         assert!(g.biconnect(&'a', &'b'));
         assert!(g.biconnect(&'a', &'c'));
@@ -153,7 +152,7 @@ mod tests {
         assert!(g.connections(&'a').unwrap().contains(&&'c'));
         assert!(g.connections(&'b').unwrap().contains(&&'a'));
         assert!(g.connections(&'c').unwrap().contains(&&'a'));
-        
+
         assert!(g.connections(&'d').is_none());
 
         // b <-> a <- c

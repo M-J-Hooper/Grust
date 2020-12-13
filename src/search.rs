@@ -1,16 +1,10 @@
-use crate::{
-    hash,
-    graph::*,
-};
-use std::collections::{
-    HashSet,
-    VecDeque,
-};
+use crate::{graph::*, hash};
+use std::collections::{HashSet, VecDeque};
 use std::hash::Hash;
 
 pub enum Mode {
     Bredth,
-    Depth
+    Depth,
 }
 
 impl<T: Hash> Graph<T> {
@@ -41,7 +35,7 @@ pub struct Iter<'a, T> {
     mode: Mode,
     graph: &'a Graph<T>,
     buffer: VecDeque<&'a T>,
-    visited: HashSet<u64>, 
+    visited: HashSet<u64>,
 }
 
 impl<'a, T: Hash + Eq> Iterator for Iter<'a, T> {
@@ -95,7 +89,7 @@ mod tests {
         assert!(g.connect(&'a', &'d'));
         assert!(g.connect(&'d', &'e'));
         assert!(g.connect(&'d', &'f'));
-        
+
         let bredth = g.dfs(&'a').collect::<Vec<_>>();
         let depth = g.bfs(&'a').collect::<Vec<_>>();
 
@@ -104,8 +98,8 @@ mod tests {
 
         assert_order(&depth);
         assert_eq!((index(&depth, 'b') - index(&depth, 'd')).abs(), 1); // d directly beside b
-    } 
-    
+    }
+
     #[test]
     fn unidirectional_cycle() {
         let mut g = Graph::init('a'..='c');
@@ -114,7 +108,7 @@ mod tests {
         assert!(g.connect(&'a', &'b'));
         assert!(g.connect(&'b', &'c'));
         assert!(g.connect(&'c', &'a'));
-        
+
         let depth = g.bfs(&'b').collect::<Vec<_>>();
         assert_eq!(depth, vec![&'b', &'c', &'a']);
     }
@@ -127,7 +121,7 @@ mod tests {
         assert!(g.biconnect(&'a', &'b'));
         assert!(g.biconnect(&'b', &'c'));
         assert!(g.biconnect(&'c', &'a'));
-        
+
         let depth = g.bfs(&'b').collect::<Vec<_>>();
         dbg!(&g, &depth);
         assert_eq!(depth.len(), 3); // Only visit each once
