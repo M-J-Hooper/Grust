@@ -8,45 +8,37 @@ pub enum Mode {
 }
 
 impl<T: Hash> Graph<T> {
-    pub fn bfs<'a>(&'a self, start: &'a T) -> WalkIter<'a, T> {
+    pub fn bfs<'a>(&'a self, start: &'a T) -> Walk<'a, T> {
         self.walk(start, Mode::Bredth)
     }
 
-    pub fn dfs<'a>(&'a self, start: &'a T) -> WalkIter<'a, T> {
+    pub fn dfs<'a>(&'a self, start: &'a T) -> Walk<'a, T> {
         self.walk(start, Mode::Depth)
     }
 
-    pub fn walk<'a>(&'a self, start: &'a T, mode: Mode) -> WalkIter<'a, T> {
+    pub fn walk<'a>(&'a self, start: &'a T, mode: Mode) -> Walk<'a, T> {
         let mut buffer = VecDeque::new();
         buffer.push_front(start);
 
         let mut visited = HashSet::new();
         visited.insert(hash(start));
-        WalkIter {
+        Walk {
             mode,
             buffer,
             visited,
             graph: &self,
         }
     }
-
-    pub fn edges<'a>(&'a self) -> EdgeIter<'a, T> {
-        EdgeIter {
-            graph: &self,
-            nodes: self.nodes.values().collect(),
-            edges: Vec::new(),
-        }
-    }
 }
 
-pub struct WalkIter<'a, T> {
+pub struct Walk<'a, T> {
     mode: Mode,
     graph: &'a Graph<T>,
     buffer: VecDeque<&'a T>,
     visited: HashSet<u64>,
 }
 
-impl<'a, T: Hash + Eq> Iterator for WalkIter<'a, T> {
+impl<'a, T: Hash + Eq> Iterator for Walk<'a, T> {
     type Item = &'a T;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -65,6 +57,36 @@ impl<'a, T: Hash + Eq> Iterator for WalkIter<'a, T> {
             }
         }
         Some(next)
+    }
+}
+
+impl<T> Graph<T> {
+    pub fn iter<'a>(&'a self) -> Iter<'a, T> {
+        Iter {
+            labels: self.nodes.values()
+                .map(|v| &v.label)
+                .collect()
+        }
+    }
+
+    pub fn edges<'a>(&'a self) -> EdgeIter<'a, T> {
+        EdgeIter {
+            graph: &self,
+            nodes: self.nodes.values().collect(),
+            edges: Vec::new(),
+        }
+    }
+}
+
+pub struct Iter<'a, T> {
+    labels: Vec<&'a T>, 
+}
+
+impl<'a, T> Iterator for Iter<'a, T> {
+    type Item = &'a T;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.labels.pop()
     }
 }
 
@@ -179,5 +201,18 @@ mod tests {
         assert!(g.connect(&'d', &'f'));
 
         assert_eq!(g.edges().count(), 4)
+    }
+
+    #[test]
+    fn iter() {
+        let mut g = Graph::init('a'..='f');
+
+        assert!(g.connect(&'a', &'b'));
+        assert!(g.connect(&'b', &'c'));
+
+        assert!(g.connect(&'d', &'e'));
+        assert!(g.connect(&'d', &'f'));
+
+        assert_eq!(g.iter().count(), 6)
     }
 }
