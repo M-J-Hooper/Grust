@@ -7,27 +7,37 @@ pub enum Mode {
     Depth,
 }
 
-impl<T: Hash> Graph<T> {
-    pub fn bfs<'a>(&'a self, start: &'a T) -> Walk<'a, T> {
+impl Default for Mode {
+    fn default() -> Self {
+        Mode::Depth
+    }
+}
+
+impl<T: Hash + Eq> Graph<T> {
+    pub fn bfs<'a>(&'a self, start: &'a T) -> Option<Walk<'a, T>> {
         self.walk(start, Mode::Bredth)
     }
 
-    pub fn dfs<'a>(&'a self, start: &'a T) -> Walk<'a, T> {
+    pub fn dfs<'a>(&'a self, start: &'a T) -> Option<Walk<'a, T>> {
         self.walk(start, Mode::Depth)
     }
 
-    pub fn walk<'a>(&'a self, start: &'a T, mode: Mode) -> Walk<'a, T> {
+    pub fn walk<'a>(&'a self, start: &'a T, mode: Mode) -> Option<Walk<'a, T>> {
+        self.get(start)?;
+
         let mut buffer = VecDeque::new();
         buffer.push_front(start);
 
-        let mut visited = HashSet::new();
-        visited.insert(hash(start));
-        Walk {
+        let mut ready = HashSet::new();
+        ready.insert(start);
+
+        Some(Walk {
             mode,
             buffer,
-            visited,
+            ready,
+            visited: HashSet::new(),
             graph: &self,
-        }
+        })
     }
 }
 
@@ -35,7 +45,8 @@ pub struct Walk<'a, T> {
     mode: Mode,
     graph: &'a Graph<T>,
     buffer: VecDeque<&'a T>,
-    visited: HashSet<u64>,
+    ready: HashSet<&'a T>,
+    pub visited: HashSet<&'a T>,
 }
 
 impl<'a, T: Hash + Eq> Iterator for Walk<'a, T> {
@@ -48,14 +59,14 @@ impl<'a, T: Hash + Eq> Iterator for Walk<'a, T> {
         };
 
         if let Some(connections) = self.graph.connections(next) {
-            for connection in connections {
-                let key = hash(connection);
-                if !self.visited.contains(&key) {
-                    self.visited.insert(key);
-                    self.buffer.push_front(connection);
+            for con in connections {
+                if !self.ready.contains(con) {
+                    self.ready.insert(con);
+                    self.buffer.push_front(con);
                 }
             }
         }
+        self.visited.insert(next);
         Some(next)
     }
 }
@@ -127,6 +138,29 @@ impl<'a, T> Iterator for EdgeIter<'a, T> {
 mod tests {
     use super::*;
 
+    #[test]
+    fn empty() {
+        let g: Graph<()> = Graph::new();
+        
+        assert_eq!(g.iter().count(), 0);
+        assert_eq!(g.edges().count(), 0);
+
+        assert!(g.bfs(&()).is_none());
+        assert!(g.dfs(&()).is_none());
+    }
+
+    #[test]
+    fn single() {
+        let mut g: Graph<()> = Graph::new();
+        g.add(());
+        
+        assert_eq!(g.iter().count(), 1);
+        assert_eq!(g.edges().count(), 0);
+
+        assert_eq!(g.bfs(&()).unwrap().count(), 1);
+        assert_eq!(g.dfs(&()).unwrap().count(), 1);
+    }
+
     fn index<T: Eq>(v: &Vec<&T>, t: T) -> i8 {
         v.iter().position(|el| el == &&t).unwrap() as i8
     }
@@ -153,8 +187,8 @@ mod tests {
         assert!(g.connect(&'d', &'e'));
         assert!(g.connect(&'d', &'f'));
 
-        let bredth = g.dfs(&'a').collect::<Vec<_>>();
-        let depth = g.bfs(&'a').collect::<Vec<_>>();
+        let bredth = g.dfs(&'a').unwrap().collect::<Vec<_>>();
+        let depth = g.bfs(&'a').unwrap().collect::<Vec<_>>();
 
         assert_order(&bredth);
         assert_eq!((index(&bredth, 'b') - index(&bredth, 'c')).abs(), 1); // c directly below b
@@ -172,7 +206,7 @@ mod tests {
         assert!(g.connect(&'b', &'c'));
         assert!(g.connect(&'c', &'a'));
 
-        let depth = g.bfs(&'b').collect::<Vec<_>>();
+        let depth = g.bfs(&'b').unwrap().collect::<Vec<_>>();
         assert_eq!(depth, vec![&'b', &'c', &'a']);
     }
 
@@ -185,7 +219,7 @@ mod tests {
         assert!(g.biconnect(&'b', &'c'));
         assert!(g.biconnect(&'c', &'a'));
 
-        let depth = g.bfs(&'b').collect::<Vec<_>>();
+        let depth = g.bfs(&'b').unwrap().collect::<Vec<_>>();
         dbg!(&g, &depth);
         assert_eq!(depth.len(), 3); // Only visit each once
     }
