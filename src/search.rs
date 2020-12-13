@@ -13,7 +13,7 @@ pub enum Mode {
     Depth
 }
 
-impl<T> Graph<T> {
+impl<T: Hash> Graph<T> {
     pub fn bfs<'a>(&'a self, start: &'a T) -> Iter<'a, T> {
         self.search(start, Mode::Bredth)
     }
@@ -25,11 +25,14 @@ impl<T> Graph<T> {
     pub fn search<'a>(&'a self, start: &'a T, mode: Mode) -> Iter<'a, T> {
         let mut buffer = VecDeque::new();
         buffer.push_front(start);
+
+        let mut visited = HashSet::new();
+        visited.insert(hash(start));
         Iter {
             mode,
             buffer,
+            visited,
             graph: &self,
-            visited: HashSet::new(),
         }
     }
 }
@@ -50,14 +53,12 @@ impl<'a, T: Hash + Eq> Iterator for Iter<'a, T> {
             Mode::Depth => self.buffer.pop_front()?,
         };
 
-        let n = hash(next);
-        self.visited.insert(n);
-
-        if let Some(set) = self.graph.adjacent(next) {
-            for adj in set {
-                let m = hash(adj);
-                if !self.visited.contains(&m) {
-                    self.buffer.push_front(adj);
+        if let Some(connections) = self.graph.connections(next) {
+            for connection in connections {
+                let key = hash(connection);
+                if !self.visited.contains(&key) {
+                    self.visited.insert(key);
+                    self.buffer.push_front(connection);
                 }
             }
         }
@@ -82,7 +83,7 @@ mod tests {
     }
 
     #[test]
-    fn bfs_vs_dfs() {
+    fn tree_bfs_vs_dfs() {
         let mut g = Graph::init('a'..='f');
 
         // a -> b -> c
@@ -103,5 +104,32 @@ mod tests {
 
         assert_order(&depth);
         assert_eq!((index(&depth, 'b') - index(&depth, 'd')).abs(), 1); // d directly beside b
-    }   
+    } 
+    
+    #[test]
+    fn unidirectional_cycle() {
+        let mut g = Graph::init('a'..='c');
+
+        // a -> b -> c -> a
+        assert!(g.connect(&'a', &'b'));
+        assert!(g.connect(&'b', &'c'));
+        assert!(g.connect(&'c', &'a'));
+        
+        let depth = g.bfs(&'b').collect::<Vec<_>>();
+        assert_eq!(depth, vec![&'b', &'c', &'a']);
+    }
+
+    #[test]
+    fn bidirectional_cycle() {
+        let mut g = Graph::init('a'..='c');
+
+        // a <-> b <-> c <-> a
+        assert!(g.biconnect(&'a', &'b'));
+        assert!(g.biconnect(&'b', &'c'));
+        assert!(g.biconnect(&'c', &'a'));
+        
+        let depth = g.bfs(&'b').collect::<Vec<_>>();
+        dbg!(&g, &depth);
+        assert_eq!(depth.len(), 3); // Only visit each once
+    }
 }
