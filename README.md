@@ -1,2 +1,2 @@
-# Grust
-Messing around with graph structures in Rust.
+# Rusty Edges
+Rough-around-the-edges graph data structures in Rust.
