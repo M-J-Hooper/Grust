@@ -40,7 +40,7 @@ impl<T: Hash + Eq> Graph<T> {
     pub fn add(&mut self, label: T) {
         let key = hash(&label);
         let node = Node {
-            label: label,
+            label,
             edges: HashMap::new(),
         };
         self.nodes.insert(key, node);
@@ -115,7 +115,7 @@ impl<T: Hash + Eq> Graph<T> {
 #[derive(Debug)]
 pub struct Node<T> {
     pub label: T,
-    edges: HashMap<u64, i64>, // key is target, value is weight
+    pub(crate) edges: HashMap<u64, i64>, // key is target, value is weight
 }
 
 impl<T: Hash> Node<T> {

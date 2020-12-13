@@ -8,37 +8,45 @@ pub enum Mode {
 }
 
 impl<T: Hash> Graph<T> {
-    pub fn bfs<'a>(&'a self, start: &'a T) -> Iter<'a, T> {
-        self.search(start, Mode::Bredth)
+    pub fn bfs<'a>(&'a self, start: &'a T) -> WalkIter<'a, T> {
+        self.walk(start, Mode::Bredth)
     }
 
-    pub fn dfs<'a>(&'a self, start: &'a T) -> Iter<'a, T> {
-        self.search(start, Mode::Depth)
+    pub fn dfs<'a>(&'a self, start: &'a T) -> WalkIter<'a, T> {
+        self.walk(start, Mode::Depth)
     }
 
-    pub fn search<'a>(&'a self, start: &'a T, mode: Mode) -> Iter<'a, T> {
+    pub fn walk<'a>(&'a self, start: &'a T, mode: Mode) -> WalkIter<'a, T> {
         let mut buffer = VecDeque::new();
         buffer.push_front(start);
 
         let mut visited = HashSet::new();
         visited.insert(hash(start));
-        Iter {
+        WalkIter {
             mode,
             buffer,
             visited,
             graph: &self,
         }
     }
+
+    pub fn edges<'a>(&'a self) -> EdgeIter<'a, T> {
+        EdgeIter {
+            graph: &self,
+            nodes: self.nodes.values().collect(),
+            edges: Vec::new(),
+        }
+    }
 }
 
-pub struct Iter<'a, T> {
+pub struct WalkIter<'a, T> {
     mode: Mode,
     graph: &'a Graph<T>,
     buffer: VecDeque<&'a T>,
     visited: HashSet<u64>,
 }
 
-impl<'a, T: Hash + Eq> Iterator for Iter<'a, T> {
+impl<'a, T: Hash + Eq> Iterator for WalkIter<'a, T> {
     type Item = &'a T;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -57,6 +65,39 @@ impl<'a, T: Hash + Eq> Iterator for Iter<'a, T> {
             }
         }
         Some(next)
+    }
+}
+
+pub struct Edge<'a, T> {
+    pub from: &'a T,
+    pub to: &'a T,
+    pub weight: i64,
+}
+
+pub struct EdgeIter<'a, T> {
+    graph: &'a Graph<T>,
+    nodes: Vec<&'a Node<T>>,
+    edges: Vec<Edge<'a, T>>,
+}
+
+impl<'a, T> Iterator for EdgeIter<'a, T> {
+    type Item = Edge<'a, T>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if let Some(edge) = self.edges.pop() {
+            return Some(edge);
+        }
+
+        let from = self.nodes.pop()?;
+        for edge in &from.edges {
+            let to = self.graph.nodes.get(edge.0).unwrap();
+            self.edges.push(Edge {
+                from: &from.label,
+                to: &to.label,
+                weight: edge.1.to_owned(),
+            });
+        }
+        self.next()
     }
 }
 
@@ -125,5 +166,18 @@ mod tests {
         let depth = g.bfs(&'b').collect::<Vec<_>>();
         dbg!(&g, &depth);
         assert_eq!(depth.len(), 3); // Only visit each once
+    }
+
+    #[test]
+    fn edges() {
+        let mut g = Graph::init('a'..='f');
+
+        assert!(g.connect(&'a', &'b'));
+        assert!(g.connect(&'b', &'c'));
+
+        assert!(g.connect(&'d', &'e'));
+        assert!(g.connect(&'d', &'f'));
+
+        assert_eq!(g.edges().count(), 4)
     }
 }
