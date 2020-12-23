@@ -1,4 +1,4 @@
-use crate::{hash, iter::Walk};
+use crate::hash;
 use std::collections::{HashMap, HashSet};
 use std::hash::Hash;
 
