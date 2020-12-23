@@ -1,5 +1,5 @@
 [package]
-name = "rusty_edges"
+name = "dag"
 version = "0.1.0"
 authors = ["Matt Hooper <mattt.hoooper@gmail.com>"]
 edition = "2018"

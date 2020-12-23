@@ -1,2 +1,2 @@
-# Rusty Edges
-Rough-around-the-edges graph data structures in Rust.
+# dag-rs
+Rough-around-the-edges DAGs in Rust.

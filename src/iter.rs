@@ -28,14 +28,10 @@ impl<T: Hash + Eq> Graph<T> {
         let mut buffer = VecDeque::new();
         buffer.push_front(start);
 
-        let mut ready = HashSet::new();
-        ready.insert(start);
-
         Some(Walk {
             mode,
             buffer,
-            ready,
-            visited: HashSet::new(),
+            seen: HashSet::new(),
             graph: &self,
         })
     }
@@ -45,28 +41,29 @@ pub struct Walk<'a, T> {
     mode: Mode,
     graph: &'a Graph<T>,
     buffer: VecDeque<&'a T>,
-    ready: HashSet<&'a T>,
-    pub visited: HashSet<&'a T>,
+    seen: HashSet<&'a T>,
 }
 
 impl<'a, T: Hash + Eq> Iterator for Walk<'a, T> {
     type Item = &'a T;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let next = match self.mode {
-            Mode::Bredth => self.buffer.pop_back()?,
-            Mode::Depth => self.buffer.pop_front()?,
+        let next = loop {
+            let next = match self.mode {
+                Mode::Bredth => self.buffer.pop_back()?,
+                Mode::Depth => self.buffer.pop_front()?,
+            };
+            if !self.seen.contains(next) {
+                break next;
+            }
         };
 
-        if let Some(connections) = self.graph.connections(next) {
+        if let Some(connections) = self.graph.get_adjacent(next) {
             for con in connections {
-                if !self.ready.contains(con) {
-                    self.ready.insert(con);
-                    self.buffer.push_front(con);
-                }
+                self.buffer.push_front(con);
             }
         }
-        self.visited.insert(next);
+        self.seen.insert(next);
         Some(next)
     }
 }
@@ -74,9 +71,7 @@ impl<'a, T: Hash + Eq> Iterator for Walk<'a, T> {
 impl<T> Graph<T> {
     pub fn iter<'a>(&'a self) -> Iter<'a, T> {
         Iter {
-            labels: self.nodes.values()
-                .map(|v| &v.label)
-                .collect()
+            labels: self.nodes.values().map(|v| &v.label).collect(),
         }
     }
 
@@ -90,7 +85,7 @@ impl<T> Graph<T> {
 }
 
 pub struct Iter<'a, T> {
-    labels: Vec<&'a T>, 
+    labels: Vec<&'a T>,
 }
 
 impl<'a, T> Iterator for Iter<'a, T> {
@@ -141,7 +136,7 @@ mod tests {
     #[test]
     fn empty() {
         let g: Graph<()> = Graph::new();
-        
+
         assert_eq!(g.iter().count(), 0);
         assert_eq!(g.edges().count(), 0);
 
@@ -153,7 +148,7 @@ mod tests {
     fn single() {
         let mut g: Graph<()> = Graph::new();
         g.add(());
-        
+
         assert_eq!(g.iter().count(), 1);
         assert_eq!(g.edges().count(), 0);
 
@@ -195,33 +190,6 @@ mod tests {
 
         assert_order(&depth);
         assert_eq!((index(&depth, 'b') - index(&depth, 'd')).abs(), 1); // d directly beside b
-    }
-
-    #[test]
-    fn unidirectional_cycle() {
-        let mut g = Graph::init('a'..='c');
-
-        // a -> b -> c -> a
-        assert!(g.connect(&'a', &'b'));
-        assert!(g.connect(&'b', &'c'));
-        assert!(g.connect(&'c', &'a'));
-
-        let depth = g.bfs(&'b').unwrap().collect::<Vec<_>>();
-        assert_eq!(depth, vec![&'b', &'c', &'a']);
-    }
-
-    #[test]
-    fn bidirectional_cycle() {
-        let mut g = Graph::init('a'..='c');
-
-        // a <-> b <-> c <-> a
-        assert!(g.biconnect(&'a', &'b'));
-        assert!(g.biconnect(&'b', &'c'));
-        assert!(g.biconnect(&'c', &'a'));
-
-        let depth = g.bfs(&'b').unwrap().collect::<Vec<_>>();
-        dbg!(&g, &depth);
-        assert_eq!(depth.len(), 3); // Only visit each once
     }
 
     #[test]

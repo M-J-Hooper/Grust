@@ -1,8 +1,8 @@
-use crate::hash;
+use crate::{hash, iter::Walk};
 use std::collections::{HashMap, HashSet};
 use std::hash::Hash;
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Graph<T> {
     pub(crate) nodes: HashMap<u64, Node<T>>,
 }
@@ -21,7 +21,7 @@ impl<T> Graph<T> {
     }
 }
 
-impl<T: Hash + Eq + Default> Graph<T> {
+impl<T: Hash + Eq> Graph<T> {
     pub fn init<I: IntoIterator<Item = T>>(labels: I) -> Self {
         let mut graph = Self::new();
         for label in labels {
@@ -29,21 +29,23 @@ impl<T: Hash + Eq + Default> Graph<T> {
         }
         graph
     }
-}
 
-impl<T: Hash + Eq> Graph<T> {
     pub(crate) fn get(&self, label: &T) -> Option<&Node<T>> {
         let key = hash(label);
         self.nodes.get(&key)
     }
 
+    pub(crate) fn add_node(&mut self, node: Node<T>) {
+        let key = hash(&node.label);
+        self.nodes.insert(key, node);
+    }
+
     pub fn add(&mut self, label: T) {
-        let key = hash(&label);
         let node = Node {
             label,
             edges: HashMap::new(),
         };
-        self.nodes.insert(key, node);
+        self.add_node(node);
     }
 
     pub fn remove(&mut self, label: &T) -> Option<Node<T>> {
@@ -56,7 +58,7 @@ impl<T: Hash + Eq> Graph<T> {
         Some(node)
     }
 
-    pub fn connections(&self, label: &T) -> Option<HashSet<&T>> {
+    pub fn get_adjacent(&self, label: &T) -> Option<HashSet<&T>> {
         let res = self
             .get(label)?
             .edges
@@ -68,7 +70,7 @@ impl<T: Hash + Eq> Graph<T> {
         Some(res)
     }
 
-    pub fn is_connected(&self, from: &T, to: &T) -> bool {
+    pub fn is_adjacent(&self, from: &T, to: &T) -> bool {
         let node = self.get(from);
         node.is_some() && node.unwrap().is_adjacent_to(to)
     }
@@ -76,13 +78,21 @@ impl<T: Hash + Eq> Graph<T> {
     pub fn connect(&mut self, from: &T, to: &T) -> bool {
         let a = hash(&from);
         let b = hash(&to);
-        let bb = self.nodes.contains_key(&b);
-        let na = self.nodes.get_mut(&a);
-        if bb && na.is_some() {
-            na.unwrap().connect_to(to);
-            true
+        if a == b {
+            return false; // Self-connection
+        }
+
+        let from_exists = self.nodes.contains_key(&a);
+        let to_exists = self.nodes.contains_key(&b);
+        if !from_exists || !to_exists {
+            return false; // Node non-existent
+        }
+
+        if self.dfs(to).unwrap().any(|n| n == from) {
+            false // Connection creates cycle
         } else {
-            false
+            self.nodes.get_mut(&a).unwrap().connect_to(to);
+            true
         }
     }
 
@@ -98,21 +108,9 @@ impl<T: Hash + Eq> Graph<T> {
             false
         }
     }
-
-    pub fn is_biconnected(&self, a: &T, b: &T) -> bool {
-        self.is_connected(a, b) && self.is_connected(b, a)
-    }
-
-    pub fn biconnect(&mut self, a: &T, b: &T) -> bool {
-        self.connect(a, b) && self.connect(b, a)
-    }
-
-    pub fn bidisconnect(&mut self, a: &T, b: &T) -> bool {
-        self.disconnect(a, b) && self.disconnect(b, a)
-    }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Node<T> {
     pub label: T,
     pub(crate) edges: HashMap<u64, i64>, // key is target, value is weight
@@ -141,29 +139,56 @@ mod tests {
 
     #[test]
     fn basic() {
-        let mut g = Graph::init('a'..='c');
+        let mut g = Graph::init('a'..='d');
 
-        // b <-> a <-> c
-        assert!(g.biconnect(&'a', &'b'));
-        assert!(g.biconnect(&'a', &'c'));
-        assert!(!g.biconnect(&'a', &'d'));
+        // a
+        // |\
+        // b c
+        // |
+        // d
+        assert!(g.connect(&'a', &'b'));
+        assert!(g.connect(&'a', &'c'));
+        assert!(g.connect(&'b', &'d'));
 
-        assert!(g.connections(&'a').unwrap().contains(&&'b'));
-        assert!(g.connections(&'a').unwrap().contains(&&'c'));
-        assert!(g.connections(&'b').unwrap().contains(&&'a'));
-        assert!(g.connections(&'c').unwrap().contains(&&'a'));
+        assert!(g.get_adjacent(&'a').unwrap().contains(&&'b'));
+        assert!(g.get_adjacent(&'a').unwrap().contains(&&'c'));
+        assert!(g.get_adjacent(&'b').unwrap().contains(&&'d'));
+        assert!(g.get_adjacent(&'c').unwrap().is_empty());
+        assert!(g.get_adjacent(&'d').unwrap().is_empty());
 
-        assert!(g.connections(&'d').is_none());
+        assert!(g.get_adjacent(&'e').is_none());
 
-        // b <-> a <- c
         assert!(g.disconnect(&'a', &'c'));
-        assert!(!g.connections(&'a').unwrap().contains(&&'c'));
-        assert!(g.connections(&'c').unwrap().contains(&&'a'));
+        assert!(!g.get_adjacent(&'a').unwrap().contains(&&'c'));
 
-        // b <-x-> c
-        assert!(g.remove(&'a').is_some());
-        assert!(g.connections(&'a').is_none());
-        assert!(g.connections(&'b').unwrap().is_empty());
-        assert!(g.connections(&'c').unwrap().is_empty());
+        assert!(g.remove(&'b').is_some());
+        assert!(g.get_adjacent(&'b').is_none());
+        assert!(g.get_adjacent(&'a').unwrap().is_empty());
+        assert!(g.get_adjacent(&'c').unwrap().is_empty());
+    }
+
+    #[test]
+    fn no_cycles() {
+        let mut g = Graph::init('a'..='e');
+
+        // a
+        // |\
+        // b c
+        // |
+        // d
+        assert!(g.connect(&'a', &'b'));
+        assert!(g.connect(&'a', &'c'));
+        assert!(g.connect(&'b', &'d'));
+
+        // Allowed
+        assert!(g.connect(&'b', &'d'));
+        assert!(g.connect(&'a', &'d'));
+        assert!(g.connect(&'d', &'c'));
+
+        // Not allowed
+        assert!(!g.connect(&'a', &'a'));
+        assert!(!g.connect(&'c', &'b'));
+        assert!(!g.connect(&'d', &'a'));
+        assert!(!g.connect(&'b', &'a'));
     }
 }

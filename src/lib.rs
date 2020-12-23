@@ -1,7 +1,7 @@
 //pub mod draw;
 pub mod graph;
 pub mod iter;
-pub mod util;
+//pub mod util;
 
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
