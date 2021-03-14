@@ -1,4 +1,4 @@
-//pub mod draw;
+pub mod fmt;
 pub mod graph;
 pub mod iter;
 pub mod util;

@@ -1,4 +1,5 @@
 use crate::hash;
+use crate::iter::Mode;
 use std::collections::{HashMap, HashSet};
 use std::hash::Hash;
 
@@ -43,7 +44,7 @@ impl<T: Hash + Eq> Graph<T> {
     pub fn add(&mut self, label: T) {
         let node = Node {
             label,
-            edges: HashMap::new(),
+            neighbors: HashSet::new(),
         };
         self.add_node(node);
     }
@@ -58,11 +59,11 @@ impl<T: Hash + Eq> Graph<T> {
         Some(node)
     }
 
-    pub fn get_adjacent(&self, label: &T) -> Option<HashSet<&T>> {
+    pub fn neighbors(&self, label: &T) -> Option<HashSet<&T>> {
         let res = self
             .get(label)?
-            .edges
-            .keys()
+            .neighbors
+            .iter()
             .map(|k| self.nodes.get(k).unwrap())
             .map(|n| &n.label)
             .collect::<HashSet<_>>();
@@ -70,7 +71,7 @@ impl<T: Hash + Eq> Graph<T> {
         Some(res)
     }
 
-    pub fn is_adjacent(&self, from: &T, to: &T) -> bool {
+    pub fn is_connected(&self, from: &T, to: &T) -> bool {
         let node = self.get(from);
         node.is_some() && node.unwrap().is_adjacent_to(to)
     }
@@ -88,7 +89,7 @@ impl<T: Hash + Eq> Graph<T> {
             return false; // Node non-existent
         }
 
-        if self.dfs(to).unwrap().any(|n| n == from) {
+        if self.walk(to, crate::iter::Mode::Depth).unwrap().any(|n| n == from) {
             false // Connection creates cycle
         } else {
             self.nodes.get_mut(&a).unwrap().connect_to(to);
@@ -113,23 +114,23 @@ impl<T: Hash + Eq> Graph<T> {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Node<T> {
     pub label: T,
-    pub(crate) edges: HashMap<u64, i64>, // key is target, value is weight
+    pub(crate) neighbors: HashSet<u64>, // key is target, value is weight
 }
 
 impl<T: Hash> Node<T> {
     pub fn is_adjacent_to(&self, to: &T) -> bool {
-        let target = hash(to);
-        self.edges.contains_key(&target)
+        let key = hash(to);
+        self.neighbors.contains(&key)
     }
 
     pub fn connect_to(&mut self, to: &T) {
-        let target = hash(to);
-        self.edges.insert(target, 1);
+        let key = hash(to);
+        self.neighbors.insert(key);
     }
 
     pub fn disconnect_from(&mut self, from: &T) {
-        let target = hash(from);
-        self.edges.remove(&target);
+        let key = hash(from);
+        self.neighbors.remove(&key);
     }
 }
 
@@ -150,21 +151,21 @@ mod tests {
         assert!(g.connect(&'a', &'c'));
         assert!(g.connect(&'b', &'d'));
 
-        assert!(g.get_adjacent(&'a').unwrap().contains(&&'b'));
-        assert!(g.get_adjacent(&'a').unwrap().contains(&&'c'));
-        assert!(g.get_adjacent(&'b').unwrap().contains(&&'d'));
-        assert!(g.get_adjacent(&'c').unwrap().is_empty());
-        assert!(g.get_adjacent(&'d').unwrap().is_empty());
+        assert!(g.neighbors(&'a').unwrap().contains(&&'b'));
+        assert!(g.neighbors(&'a').unwrap().contains(&&'c'));
+        assert!(g.neighbors(&'b').unwrap().contains(&&'d'));
+        assert!(g.neighbors(&'c').unwrap().is_empty());
+        assert!(g.neighbors(&'d').unwrap().is_empty());
 
-        assert!(g.get_adjacent(&'e').is_none());
+        assert!(g.neighbors(&'e').is_none());
 
         assert!(g.disconnect(&'a', &'c'));
-        assert!(!g.get_adjacent(&'a').unwrap().contains(&&'c'));
+        assert!(!g.neighbors(&'a').unwrap().contains(&&'c'));
 
         assert!(g.remove(&'b').is_some());
-        assert!(g.get_adjacent(&'b').is_none());
-        assert!(g.get_adjacent(&'a').unwrap().is_empty());
-        assert!(g.get_adjacent(&'c').unwrap().is_empty());
+        assert!(g.neighbors(&'b').is_none());
+        assert!(g.neighbors(&'a').unwrap().is_empty());
+        assert!(g.neighbors(&'c').unwrap().is_empty());
     }
 
     #[test]

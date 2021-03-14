@@ -14,12 +14,31 @@ impl Default for Mode {
 }
 
 impl<T: Hash + Eq> Graph<T> {
-    pub fn bfs<'a>(&'a self, start: &'a T) -> Option<Walk<'a, T>> {
-        self.walk(start, Mode::Bredth)
+    
+    pub fn ordering<'a>(&'a self) -> Ordering<'a, T> {
+        Ordering::new(self)
     }
 
-    pub fn dfs<'a>(&'a self, start: &'a T) -> Option<Walk<'a, T>> {
-        self.walk(start, Mode::Depth)
+    pub fn bfs<'a>(&'a self) -> Walk<'a, T> {
+        self.search(Mode::Bredth)
+    }
+
+    pub fn dfs<'a>(&'a self) -> Walk<'a, T> {
+        self.search(Mode::Depth)
+    }
+
+    pub fn search<'a>(&'a self, mode: Mode) -> Walk<'a, T> {
+        let mut buffer = VecDeque::new();
+        for root in self.sources() {
+            buffer.push_front(root);
+        }
+
+        Walk {
+            mode,
+            buffer,
+            visited: HashSet::new(),
+            graph: &self,
+        }
     }
 
     pub fn walk<'a>(&'a self, start: &'a T, mode: Mode) -> Option<Walk<'a, T>> {
@@ -31,7 +50,7 @@ impl<T: Hash + Eq> Graph<T> {
         Some(Walk {
             mode,
             buffer,
-            seen: HashSet::new(),
+            visited: HashSet::new(),
             graph: &self,
         })
     }
@@ -41,7 +60,7 @@ pub struct Walk<'a, T> {
     mode: Mode,
     graph: &'a Graph<T>,
     buffer: VecDeque<&'a T>,
-    seen: HashSet<&'a T>,
+    visited: HashSet<&'a T>,
 }
 
 impl<'a, T: Hash + Eq> Iterator for Walk<'a, T> {
@@ -53,17 +72,17 @@ impl<'a, T: Hash + Eq> Iterator for Walk<'a, T> {
                 Mode::Bredth => self.buffer.pop_back()?,
                 Mode::Depth => self.buffer.pop_front()?,
             };
-            if !self.seen.contains(next) {
+            if !self.visited.contains(next) {
                 break next;
             }
         };
 
-        if let Some(connections) = self.graph.get_adjacent(next) {
+        if let Some(connections) = self.graph.neighbors(next) {
             for con in connections {
                 self.buffer.push_front(con);
             }
         }
-        self.seen.insert(next);
+        self.visited.insert(next);
         Some(next)
     }
 }
@@ -71,61 +90,105 @@ impl<'a, T: Hash + Eq> Iterator for Walk<'a, T> {
 impl<T> Graph<T> {
     pub fn iter<'a>(&'a self) -> Iter<'a, T> {
         Iter {
-            labels: self.nodes.values().map(|v| &v.label).collect(),
+            inner: self.nodes()
+        }
+    }
+
+    pub fn nodes<'a>(&'a self) -> NodeIter<'a, T> {
+        NodeIter {
+            inner: self.nodes.values(),
         }
     }
 
     pub fn edges<'a>(&'a self) -> EdgeIter<'a, T> {
         EdgeIter {
             graph: &self,
-            nodes: self.nodes.values().collect(),
-            edges: Vec::new(),
+            nodes: self.nodes(),
+            next: Vec::new(),
         }
     }
 }
 
+pub struct NodeIter<'a, T> {
+    inner: std::collections::hash_map::Values<'a, u64, Node<T>>,
+}
+
+impl<'a, T> Iterator for NodeIter<'a, T> {
+    type Item = &'a Node<T>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.inner.next()
+    }
+}
+
 pub struct Iter<'a, T> {
-    labels: Vec<&'a T>,
+    inner: NodeIter<'a, T>,
 }
 
 impl<'a, T> Iterator for Iter<'a, T> {
     type Item = &'a T;
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.labels.pop()
+        self.inner.next().map(|n| &n.label)
     }
-}
-
-pub struct Edge<'a, T> {
-    pub from: &'a T,
-    pub to: &'a T,
-    pub weight: i64,
 }
 
 pub struct EdgeIter<'a, T> {
     graph: &'a Graph<T>,
-    nodes: Vec<&'a Node<T>>,
-    edges: Vec<Edge<'a, T>>,
+    nodes: NodeIter<'a, T>,
+    next: Vec<(&'a T, &'a  T)>,
 }
 
 impl<'a, T> Iterator for EdgeIter<'a, T> {
-    type Item = Edge<'a, T>;
+    type Item = (&'a T, &'a  T);
 
     fn next(&mut self) -> Option<Self::Item> {
-        if let Some(edge) = self.edges.pop() {
+        if let Some(edge) = self.next.pop() {
             return Some(edge);
         }
 
-        let from = self.nodes.pop()?;
-        for edge in &from.edges {
-            let to = self.graph.nodes.get(edge.0).unwrap();
-            self.edges.push(Edge {
-                from: &from.label,
-                to: &to.label,
-                weight: edge.1.to_owned(),
-            });
+        let from = self.nodes.next()?;
+        for n in &from.neighbors {
+            let to = self.graph.nodes.get(n).unwrap();
+            self.next.push((&from.label, &to.label));
         }
         self.next()
+    }
+}
+
+pub struct Ordering<'a, T> {
+    inner: std::vec::IntoIter<&'a T>,
+}
+
+impl<'a, T: Hash + Eq> Ordering<'a, T> {
+    fn new(graph: &'a Graph<T>) -> Self {
+        let mut result = Vec::new();
+        let mut degrees = graph.indegrees();
+
+        let mut next = Vec::new();
+        next.extend(graph.sources());
+        while let Some(label) = next.pop() {
+            result.push(label);
+            for neighbor in graph.neighbors(label).unwrap() {
+                let degree = degrees.get_mut(neighbor).unwrap();
+                *degree -= 1;
+                if *degree == 0 {
+                    next.push(neighbor);
+                }
+            }
+        }
+
+        Ordering {
+            inner: result.into_iter()
+        }
+    }
+}
+
+impl<'a, T> Iterator for Ordering<'a, T> {
+    type Item = &'a T;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.inner.next()
     }
 }
 
@@ -140,20 +203,25 @@ mod tests {
         assert_eq!(g.iter().count(), 0);
         assert_eq!(g.edges().count(), 0);
 
-        assert!(g.bfs(&()).is_none());
-        assert!(g.dfs(&()).is_none());
+        assert!(g.walk(&(), Mode::Depth).is_none());
+        assert!(g.walk(&(), Mode::Bredth).is_none());
+        
+        assert_eq!(g.size(), 0);
+        assert_eq!(g.dfs().count(), 0);
+        assert_eq!(g.bfs().count(), 0);
     }
 
     #[test]
     fn single() {
-        let mut g: Graph<()> = Graph::new();
+        let mut g = Graph::new();
         g.add(());
 
         assert_eq!(g.iter().count(), 1);
         assert_eq!(g.edges().count(), 0);
 
-        assert_eq!(g.bfs(&()).unwrap().count(), 1);
-        assert_eq!(g.dfs(&()).unwrap().count(), 1);
+        assert_eq!(g.size(), 1);
+        assert_eq!(g.bfs().count(), 1);
+        assert_eq!(g.dfs().count(), 1);
     }
 
     fn index<T: Eq>(v: &Vec<&T>, t: T) -> i8 {
@@ -182,8 +250,8 @@ mod tests {
         assert!(g.connect(&'d', &'e'));
         assert!(g.connect(&'d', &'f'));
 
-        let bredth = g.dfs(&'a').unwrap().collect::<Vec<_>>();
-        let depth = g.bfs(&'a').unwrap().collect::<Vec<_>>();
+        let bredth = g.dfs().collect::<Vec<_>>();
+        let depth = g.bfs().collect::<Vec<_>>();
 
         assert_order(&bredth);
         assert_eq!((index(&bredth, 'b') - index(&bredth, 'c')).abs(), 1); // c directly below b
@@ -216,5 +284,26 @@ mod tests {
         assert!(g.connect(&'d', &'f'));
 
         assert_eq!(g.iter().count(), 6)
+    }
+
+    #[test]
+    fn ordering() {
+        let mut g = Graph::init('a'..='f');
+    
+        assert!(g.connect(&'a', &'b')); // a
+        assert!(g.connect(&'b', &'c')); // |\
+        assert!(g.connect(&'a', &'d')); // b d
+        assert!(g.connect(&'c', &'e')); // |/|\
+        assert!(g.connect(&'d', &'c')); // c | f
+        assert!(g.connect(&'d', &'e')); //  \|/
+        assert!(g.connect(&'d', &'f')); //   e
+        assert!(g.connect(&'f', &'e'));
+
+        let order = g.ordering().collect::<Vec<_>>();
+        assert_eq!(index(&order, 'a'), 0);
+        assert!(index(&order, 'b') < index(&order, 'c'));
+        assert!(index(&order, 'd') < index(&order, 'c'));
+        assert!(index(&order, 'd') < index(&order, 'f'));
+        assert_eq!(index(&order, 'e'), 5);
     }
 }
